@@ -1,0 +1,6 @@
+dataset_name: wikimedia/wikipedia
+dataset_config: "20231101.en"
+split: train
+text_field: text
+max_mb: 100
+output_path: text.txt
