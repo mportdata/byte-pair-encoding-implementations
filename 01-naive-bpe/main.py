@@ -7,6 +7,10 @@ import tracemalloc
 
 logger = logging.getLogger(__name__)
 
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     force=True
+# )
 
 def load_text_data() -> str:
     text_path = Path(__file__).resolve().parent.parent / "text.txt"
