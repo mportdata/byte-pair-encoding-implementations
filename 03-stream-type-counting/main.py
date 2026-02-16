@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 
 import logging
@@ -19,19 +20,30 @@ def load_text_data() -> str:
     logger.debug("First 100 characters: %s", text_data[:100])
     return text_data
 
-def string_to_types_list(s: str) -> list[str]:
-    words = s.split()   # split on any whitespace
-    if not words:
-        return []
-    units = [words[0]]     # first word: no leading space
-    for w in words[1:]:
-        units.append("Ġ" + w)
-    logger.info("Converted text to types list (%d types)", len(units))
-    logger.debug("First 10 types: %s", units[:10])
-    return units
+def string_to_types_iter(s: str) -> Iterable[str]:
+    n = len(s)
+    i = 0
+    first_word = True
 
-def types_list_to_types_counter(types_list: list[str]) -> Counter[str]:
-    counter = Counter(types_list)
+    while i < n:
+        # Skip leading whitespace
+        while i < n and s[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        # Find the end of the word
+        start = i
+        while i < n and not s[i].isspace():
+            i += 1
+        word = s[start:i]
+        if first_word:
+            yield word  # first word: no leading space
+            first_word = False
+        else:
+            yield "Ġ" + word  # subsequent words: add leading space
+
+def types_iter_to_types_counter(types_iter: Iterable[str]) -> Counter[str]:
+    counter = Counter(types_iter)
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types: %s", counter.most_common(10))
     return counter
@@ -94,8 +106,8 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
     if vocab_size < base_vocab_size:
         raise ValueError(f"Vocabulary size must be at least {base_vocab_size}")
     merge_dict: dict[tuple[int, int], int] = {}
-    types_list = string_to_types_list(text)
-    types_counter = types_list_to_types_counter(types_list)
+    types_iter = string_to_types_iter(text)
+    types_counter = types_iter_to_types_counter(types_iter)
     bytes_counter = types_counter_to_bytes_counter(types_counter)
     decimal_bytes_tuple_counter = bytes_counter_to_decimal_bytes_tuple_counter(bytes_counter)
     decimal_bytes_pair_counter = decmimal_bytes_tuple_counter_to_decimal_bytes_pair_counter(decimal_bytes_tuple_counter)
