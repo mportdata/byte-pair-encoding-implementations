@@ -49,3 +49,15 @@ types instead of scanning all types.
 
 This keeps the incremental-update strategy from Section 5 while reducing
 per-merge work further as the vocabulary grows.
+
+## 7. Memory-Lean Representations
+
+In this implementation, we replace higher-overhead Python objects with
+memory-lean equivalents while preserving behavior:
+- represent types as `bytes` values instead of tuples of ints
+- represent pairs as packed integer keys (`pack_pair(a, b)`)
+- use a lazy list-based pair-to-type index (`dict[pair_key, list[type_id]]`)
+
+The list index is append-only and may contain stale or duplicate type IDs, but
+correctness is preserved by checking pair presence in each type before applying
+updates. This reduces memory usage while keeping incremental pair-count updates.
