@@ -21,7 +21,7 @@ def load_text_data() -> str:
     logger.debug("First 100 characters: %s", text_data[:100])
     return text_data
 
-def _encoded_types_iter(s: str) -> Iterable[tuple[int, ...]]:
+def _encode_types_iter(s: str) -> Iterable[tuple[int, ...]]:
     first_word = True
     for m in re.compile(r"\S+").finditer(s):
         w = m.group(0)
@@ -32,7 +32,7 @@ def _encoded_types_iter(s: str) -> Iterable[tuple[int, ...]]:
             yield tuple(("Ġ" + w).encode("utf-8"))  # subsequent words: add leading space
 
 def build_type_counter(s: str) -> Counter[tuple[int, ...]]:
-    counter: Counter[tuple[int, ...]] = Counter(_encoded_types_iter(s))
+    counter: Counter[tuple[int, ...]] = Counter(_encode_types_iter(s))
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types as byte sequences: %s", counter.most_common(10))
     return counter
@@ -49,14 +49,14 @@ def build_pair_counter(types_counter: Counter[tuple[int, ...]]) -> Counter[tuple
     logger.debug("Most common 10 pairs: %s", pair_counter.most_common(10))
     return pair_counter
 
-def get_most_common(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
+def get_most_common_pair(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
     if not counter:
         return None
     most_common_pair, _ = counter.most_common(1)[0]
     logger.debug("Most common byte pair to merge: %s", most_common_pair)
     return most_common_pair
 
-def update_pair_in_type_counter(type_counter: Counter[tuple[int, ...]], pair: tuple[int, int], token: int) -> Counter[tuple[int, ...]]:
+def apply_pair_merge(type_counter: Counter[tuple[int, ...]], pair: tuple[int, int], token: int) -> Counter[tuple[int, ...]]:
     new_counter = Counter()
     for type_tuple, count in type_counter.items():
         new_tuple = []
@@ -81,11 +81,11 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
     pair_counter: Counter[tuple[int, int]] = build_pair_counter(type_counter)
     current_vocab_size: int = base_vocab_size + len(merge_dict)
     while current_vocab_size < vocab_size:
-        most_common_pair = get_most_common(pair_counter)
+        most_common_pair = get_most_common_pair(pair_counter)
         if most_common_pair is None:
             break
         merge_dict[most_common_pair] = base_vocab_size + len(merge_dict)
-        type_counter: Counter[tuple[int, ...]] = update_pair_in_type_counter(type_counter, most_common_pair, merge_dict[most_common_pair])
+        type_counter: Counter[tuple[int, ...]] = apply_pair_merge(type_counter, most_common_pair, merge_dict[most_common_pair])
         pair_counter: Counter[tuple[int, int]] = build_pair_counter(type_counter)
         current_vocab_size = base_vocab_size + len(merge_dict)
     logger.info("Final vocabulary size: %d", current_vocab_size)
