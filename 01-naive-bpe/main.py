@@ -84,7 +84,7 @@ if __name__ == "__main__":
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    elapsed_seconds = t_1 - t_0
+    elapsed_seconds: float = t_1 - t_0
     logger.info("Training BPE took %.2f seconds", elapsed_seconds)
     logger.info(
         "Current memory usage: %.2f MB, Peak memory usage: %.2f MB",

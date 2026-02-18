@@ -31,3 +31,12 @@ engine using `re.compile` and `finditer`.
 
 This preserves the memory savings of streaming while recovering much of
 the performance lost to Python-level character iteration.
+
+## 5. Incremental Pair Updates
+
+In this implementation, we avoid rebuilding the full global pair counter
+after every merge. Instead, we keep per-type pair counts and update the
+global counts incrementally only for types affected by the selected merge.
+
+This preserves correctness while substantially reducing repeated work
+across merge iterations.
