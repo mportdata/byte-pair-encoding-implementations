@@ -7,12 +7,13 @@ import time
 import re
 import tracemalloc
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    force=True
-)
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     force=True
+# )
 
 logger = logging.getLogger(__name__)
+TOKEN_RE = re.compile(r"\S+")
 
 
 def load_text_data() -> str:
@@ -25,7 +26,7 @@ def load_text_data() -> str:
 
 def _encode_types_iter(s: str) -> Iterable[tuple[int, ...]]:
     first_word = True
-    for m in re.compile(r"\S+").finditer(s):
+    for m in TOKEN_RE.finditer(s):
         w = m.group(0)
         if first_word:
             yield tuple(w.encode("utf-8"))  # first word: no leading space
@@ -145,21 +146,17 @@ def apply_pair_merge(
         
         _apply_weighted_local_to_global(pair_counter, new_local_counter, type_freqs[type_id], +1)
 
-        old_pairs = set(old_local_counter.keys())
-        new_pairs = set(new_local_counter.keys())
+        for old_pair in old_local_counter:
+            if old_pair not in new_local_counter:
+                type_ids = pair_to_type_ids.get(old_pair)
+                if type_ids is not None:
+                    type_ids.discard(type_id)
+                    if not type_ids:
+                        del pair_to_type_ids[old_pair]
 
-        removed_pairs = old_pairs - new_pairs
-        added_pairs = new_pairs - old_pairs
-
-        for removed_pair in removed_pairs:
-            type_ids = pair_to_type_ids.get(removed_pair)
-            if type_ids is not None:
-                type_ids.discard(type_id)
-                if not type_ids:
-                    del pair_to_type_ids[removed_pair]
-
-        for added_pair in added_pairs:
-            pair_to_type_ids.setdefault(added_pair, set()).add(type_id)
+        for new_pair in new_local_counter:
+            if new_pair not in old_local_counter:
+                pair_to_type_ids.setdefault(new_pair, set()).add(type_id)
 
     return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter
 

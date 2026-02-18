@@ -13,6 +13,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+TOKEN_RE = re.compile(r"\S+")
 
 def load_text_data() -> str:
     text_path = Path(__file__).resolve().parent.parent / "text.txt"
@@ -23,7 +24,7 @@ def load_text_data() -> str:
 
 def _encode_types_iter(s: str) -> Iterable[tuple[int, ...]]:
     first_word = True
-    for m in re.compile(r"\S+").finditer(s):
+    for m in TOKEN_RE.finditer(s):
         w = m.group(0)
         if first_word:
             yield tuple(w.encode("utf-8"))  # first word: no leading space
