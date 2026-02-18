@@ -7,10 +7,10 @@ import tracemalloc
 
 logger = logging.getLogger(__name__)
 
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     force=True
-# )
+logging.basicConfig(
+    level=logging.DEBUG,
+    force=True
+)
 
 def load_text_data() -> str:
     text_path = Path(__file__).resolve().parent.parent / "text.txt"
@@ -76,7 +76,7 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     text_data: str = load_text_data()
-    vocab_size: int = 257
+    vocab_size: int = 270
     tracemalloc.start()
     t_0 = time.perf_counter()
     train_bpe(text_data, vocab_size)

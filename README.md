@@ -40,3 +40,12 @@ global counts incrementally only for types affected by the selected merge.
 
 This preserves correctness while substantially reducing repeated work
 across merge iterations.
+
+## 6. Pair-to-Type Index
+
+In this implementation, we add an index from each pair to the set of type IDs
+that currently contain it. During each merge step, we update only those indexed
+types instead of scanning all types.
+
+This keeps the incremental-update strategy from Section 5 while reducing
+per-merge work further as the vocabulary grows.
