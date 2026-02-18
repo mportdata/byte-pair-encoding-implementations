@@ -23,7 +23,7 @@ def load_text_data() -> str:
     return text_data
 
 
-def _encoded_types_iter(s: str) -> Iterable[tuple[int, ...]]:
+def _encode_types_iter(s: str) -> Iterable[tuple[int, ...]]:
     first_word = True
     for m in re.compile(r"\S+").finditer(s):
         w = m.group(0)
@@ -34,41 +34,41 @@ def _encoded_types_iter(s: str) -> Iterable[tuple[int, ...]]:
             yield tuple(("Ġ" + w).encode("utf-8"))  # subsequent words: add leading space
 
 
-def _build_pairs_by_sid(seqs: list[list[int]]) -> list[Counter[tuple[int, int]]]:
-    pairs_by_sid: list[Counter[tuple[int, int]]] = []
+def _build_pairs_by_type_id(type_seqs: list[list[int]]) -> list[Counter[tuple[int, int]]]:
+    pairs_by_type_id: list[Counter[tuple[int, int]]] = []
 
-    for seq in seqs:
+    for seq in type_seqs:
         if len(seq) < 2:
-            pairs_by_sid.append(Counter())
+            pairs_by_type_id.append(Counter())
         else:
-            pairs_by_sid.append(Counter(zip(seq, seq[1:])))
+            pairs_by_type_id.append(Counter(zip(seq, seq[1:])))
 
-    return pairs_by_sid
+    return pairs_by_type_id
 
 
-def build_type_lists(s: str) -> tuple[list[list[int]], list[int], list[Counter[tuple[int, int]]]]:
-    counter: Counter[tuple[int, ...]] = Counter(_encoded_types_iter(s))
+def build_type_state(s: str) -> tuple[list[list[int]], list[int], list[Counter[tuple[int, int]]]]:
+    counter: Counter[tuple[int, ...]] = Counter(_encode_types_iter(s))
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types as byte sequences: %s", counter.most_common(10))
 
     # Convert to mutable sequences (lists) because we will merge in-place later
-    seqs: list[list[int]] = [list(t) for t in counter.keys()]
+    type_seqs: list[list[int]] = [list(t) for t in counter.keys()]
 
-    # Keep frequencies aligned with seqs by iterating values in the same order as keys()
-    freqs: list[int] = list(counter.values())
+    # Keep frequencies aligned with type_seqs by iterating values in the same order as keys()
+    type_freqs: list[int] = list(counter.values())
 
-    pairs_by_sid: list[Counter[tuple[int, int]]] = _build_pairs_by_sid(seqs)
-    return seqs, freqs, pairs_by_sid
+    pairs_by_type_id: list[Counter[tuple[int, int]]] = _build_pairs_by_type_id(type_seqs)
+    return type_seqs, type_freqs, pairs_by_type_id
 
 
 def _count_pairs_in_type(seq: list[int]) -> Counter[tuple[int, int]]:
     return Counter(zip(seq, seq[1:])) if len(seq) >= 2 else Counter()
 
 
-def build_pair_counter(seqs: list[list[int]], freqs: list[int]) -> Counter[tuple[int, int]]:
+def build_pair_counter(type_seqs: list[list[int]], type_freqs: list[int]) -> Counter[tuple[int, int]]:
     pair_counter: Counter[tuple[int, int]] = Counter()
 
-    for seq, freq in zip(seqs, freqs):
+    for seq, freq in zip(type_seqs, type_freqs):
         local = _count_pairs_in_type(seq)
         if not local:
             continue
@@ -81,7 +81,7 @@ def build_pair_counter(seqs: list[list[int]], freqs: list[int]) -> Counter[tuple
     return pair_counter
 
 
-def get_most_common(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
+def get_most_common_pair(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
     if not counter:
         return None
     most_common_pair, _ = counter.most_common(1)[0]
@@ -112,30 +112,30 @@ def _apply_weighted_local_to_global(
         if global_pairs[pair] == 0:
             del global_pairs[pair]
 
-def update_pair_incrementally(
-    seqs: list[list[int]],
-    freqs: list[int],
-    pairs_by_sid: list[Counter[tuple[int, int]]],
+def apply_pair_merge(
+    type_seqs: list[list[int]],
+    type_freqs: list[int],
+    pairs_by_type_id: list[Counter[tuple[int, int]]],
     pair_counter: Counter[tuple[int, int]],
     pair: tuple[int, int],
     token: int,
 ) -> tuple[list[list[int]], list[Counter[tuple[int, int]]], Counter[tuple[int, int]]]:
-    for sid, seq in enumerate(seqs):
-        old_local_counter = pairs_by_sid[sid]
+    for type_id, seq in enumerate(type_seqs):
+        old_local_counter = pairs_by_type_id[type_id]
         if old_local_counter.get(pair, 0) == 0:
             continue
 
-        _apply_weighted_local_to_global(pair_counter, old_local_counter, freqs[sid], -1)
+        _apply_weighted_local_to_global(pair_counter, old_local_counter, type_freqs[type_id], -1)
 
         new_seq = _update_pair_in_type_seq(seq, pair, token)
-        seqs[sid] = new_seq
+        type_seqs[type_id] = new_seq
 
         new_local_counter = _count_pairs_in_type(new_seq)
-        pairs_by_sid[sid] = new_local_counter
+        pairs_by_type_id[type_id] = new_local_counter
         
-        _apply_weighted_local_to_global(pair_counter, new_local_counter, freqs[sid], +1)
+        _apply_weighted_local_to_global(pair_counter, new_local_counter, type_freqs[type_id], +1)
 
-    return seqs, pairs_by_sid, pair_counter
+    return type_seqs, pairs_by_type_id, pair_counter
 
 
 def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
@@ -145,22 +145,22 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
     merge_dict: dict[tuple[int, int], int] = {}
 
-    seqs, freqs, pairs_by_sid = build_type_lists(text)
-    pair_counter: Counter[tuple[int, int]] = build_pair_counter(seqs, freqs)
+    type_seqs, type_freqs, pairs_by_type_id = build_type_state(text)
+    pair_counter: Counter[tuple[int, int]] = build_pair_counter(type_seqs, type_freqs)
 
     current_vocab_size: int = base_vocab_size + len(merge_dict)
     while current_vocab_size < vocab_size:
-        most_common_pair = get_most_common(pair_counter)
+        most_common_pair = get_most_common_pair(pair_counter)
         if most_common_pair is None:
             break
 
         token = base_vocab_size + len(merge_dict)
         merge_dict[most_common_pair] = token
 
-        seqs, pairs_by_sid, pair_counter = update_pair_incrementally(
-            seqs=seqs,
-            freqs=freqs,
-            pairs_by_sid=pairs_by_sid,
+        type_seqs, pairs_by_type_id, pair_counter = apply_pair_merge(
+            type_seqs=type_seqs,
+            type_freqs=type_freqs,
+            pairs_by_type_id=pairs_by_type_id,
             pair_counter=pair_counter,
             pair=most_common_pair,
             token=token,

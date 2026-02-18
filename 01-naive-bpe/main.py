@@ -19,7 +19,7 @@ def load_text_data() -> str:
     logger.debug("First 100 characters: %s", text_data[:100])
     return text_data
 
-def bytes_list(s: str) -> list[int]:
+def encode_bytes(s: str) -> list[int]:
     text_bytes = s.encode("utf-8")
     text_bytes_list = list(text_bytes)
     logger.info("Converted text to bytes list (%d bytes)", len(text_bytes_list))
@@ -33,22 +33,22 @@ def build_pair_counter(bytes_list: list[int]) -> Counter[tuple[int, int]]:
     logger.debug("Most common 10 byte pairs: %s", counter.most_common(10))
     return counter
 
-def get_most_common(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
+def get_most_common_pair(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
     if not counter:
         return None
     most_common_pair, _ = counter.most_common(1)[0]
     logger.debug("Most common byte pair to merge: %s", most_common_pair)
     return most_common_pair
 
-def update_pair_in_bytes_list(bytes_list: list[int], pair: tuple[int, int], token: int) -> list[int]:
+def apply_pair_merge(byte_sequence: list[int], pair: tuple[int, int], token: int) -> list[int]:
     new_bytes_list = []
     i = 0
-    while i < len(bytes_list):
-        if i < len(bytes_list) - 1 and (bytes_list[i], bytes_list[i + 1]) == pair:
+    while i < len(byte_sequence):
+        if i < len(byte_sequence) - 1 and (byte_sequence[i], byte_sequence[i + 1]) == pair:
             new_bytes_list.append(token)
             i += 2  # Skip the next byte since it's part of the pair
         else:
-            new_bytes_list.append(bytes_list[i])
+            new_bytes_list.append(byte_sequence[i])
             i += 1
     logger.debug("Replaced pair %s with token %d, new length: %d", pair, token, len(new_bytes_list))
     return new_bytes_list
@@ -58,15 +58,15 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
     if vocab_size < base_vocab_size:
         raise ValueError(f"Vocabulary size must be at least {base_vocab_size}")
     merge_dict: dict[tuple[int, int], int] = {}
-    text_bytes: list[int] = bytes_list(text)
+    text_bytes: list[int] = encode_bytes(text)
     byte_pairs_counter: Counter[tuple[int, int]] = build_pair_counter(text_bytes)
     current_vocab_size: int = base_vocab_size + len(merge_dict)
     while current_vocab_size < vocab_size:
-        most_common_pair: tuple[int, int] | None = get_most_common(byte_pairs_counter)
+        most_common_pair: tuple[int, int] | None = get_most_common_pair(byte_pairs_counter)
         if most_common_pair is None:
             break
         merge_dict[most_common_pair] = base_vocab_size + len(merge_dict)
-        text_bytes: list[int] = update_pair_in_bytes_list(text_bytes, most_common_pair, merge_dict[most_common_pair])
+        text_bytes: list[int] = apply_pair_merge(text_bytes, most_common_pair, merge_dict[most_common_pair])
         byte_pairs_counter: Counter[tuple[int, int]] = build_pair_counter(text_bytes)
         current_vocab_size: int = base_vocab_size + len(merge_dict)
     logger.info("Final vocabulary size: %d", current_vocab_size)
