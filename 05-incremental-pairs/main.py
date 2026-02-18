@@ -174,8 +174,8 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    text_data = load_text_data()
-    vocab_size = 257
+    text_data: str = load_text_data()
+    vocab_size: int = 257
     tracemalloc.start()
     t_0 = time.perf_counter()
     train_bpe(text_data, vocab_size)
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    elapsed_seconds = t_1 - t_0
+    elapsed_seconds: float = t_1 - t_0
     logger.info("Training BPE took %.2f seconds", elapsed_seconds)
     logger.info(
         "Current memory usage: %.2f MB, Peak memory usage: %.2f MB",

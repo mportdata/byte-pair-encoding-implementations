@@ -19,35 +19,35 @@ def load_text_data() -> str:
     logger.debug("First 100 characters: %s", text_data[:100])
     return text_data
 
-def _encode_types(s: str) -> list[list[bytes]]:
+def _encode_types(s: str) -> list[tuple[int, ...]]:
     words = s.split()   # split on any whitespace
     if not words:
         return []
-    units = [tuple(words[0].encode("utf-8"))]     # first word: no leading space
+    units: list[tuple[int, ...]] = [tuple(words[0].encode("utf-8"))]     # first word: no leading space
     for w in words[1:]:
         units.append(tuple(("Ġ" + w).encode("utf-8")))  # subsequent words: add leading space
     logger.info("Converted text to types list (%d types)", len(units))
     logger.debug("First 10 byte encoded types: %s", units[:10])
     return units
 
-def build_types_counter(s:str) -> Counter[tuple[int, ...]]:
-    types_list: list[bytes] = _encode_types(s)
+def build_type_counter(s: str) -> Counter[tuple[int, ...]]:
+    types_list: list[tuple[int, ...]] = _encode_types(s)
     counter: Counter[tuple[int, ...]] = Counter(types_list)
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types as byte sequences: %s", counter.most_common(10))
     return counter
 
 def build_pair_counter(types_counter: Counter[tuple[int, ...]]) -> Counter[tuple[int, int]]:
-    decimal_bytes_pair_counter = Counter()
-    for decimal_bytes_tuple, count in types_counter.items():
-        if len(decimal_bytes_tuple) < 2:
+    pair_counter: Counter[tuple[int, int]] = Counter()
+    for type_tuple, count in types_counter.items():
+        if len(type_tuple) < 2:
             continue
-        pairs = zip(decimal_bytes_tuple, decimal_bytes_tuple[1:])
+        pairs = zip(type_tuple, type_tuple[1:])
         for pair in pairs:
-            decimal_bytes_pair_counter[pair] += count
-    logger.debug("Counted pairs, total unique pairs: %d", len(decimal_bytes_pair_counter))
-    logger.debug("Most common 10 pairs: %s", decimal_bytes_pair_counter.most_common(10))
-    return decimal_bytes_pair_counter
+            pair_counter[pair] += count
+    logger.debug("Counted pairs, total unique pairs: %d", len(pair_counter))
+    logger.debug("Most common 10 pairs: %s", pair_counter.most_common(10))
+    return pair_counter
 
 def get_most_common(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None:
     if not counter:
@@ -58,15 +58,15 @@ def get_most_common(counter: Counter[tuple[int, int]]) -> tuple[int, int] | None
 
 def update_pair_in_type_counter(type_counter: Counter[tuple[int, ...]], pair: tuple[int, int], token: int) -> Counter[tuple[int, ...]]:
     new_counter = Counter()
-    for decimal_bytes_tuple, count in type_counter.items():
+    for type_tuple, count in type_counter.items():
         new_tuple = []
         i = 0
-        while i < len(decimal_bytes_tuple):
-            if i < len(decimal_bytes_tuple) - 1 and (decimal_bytes_tuple[i], decimal_bytes_tuple[i + 1]) == pair:
+        while i < len(type_tuple):
+            if i < len(type_tuple) - 1 and (type_tuple[i], type_tuple[i + 1]) == pair:
                 new_tuple.append(token)
                 i += 2  # Skip the next byte since it's part of the pair
             else:
-                new_tuple.append(decimal_bytes_tuple[i])
+                new_tuple.append(type_tuple[i])
                 i += 1
         new_counter[tuple(new_tuple)] += count
     logger.debug("Replaced pair %s with token %d in decimal bytes tuple counter, total unique tuples: %d", pair, token, len(new_counter))
@@ -77,7 +77,7 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
     if vocab_size < base_vocab_size:
         raise ValueError(f"Vocabulary size must be at least {base_vocab_size}")
     merge_dict: dict[tuple[int, int], int] = {}
-    type_counter: Counter[tuple[int, ...]] = build_types_counter(text)
+    type_counter: Counter[tuple[int, ...]] = build_type_counter(text)
     pair_counter: Counter[tuple[int, int]] = build_pair_counter(type_counter)
     current_vocab_size: int = base_vocab_size + len(merge_dict)
     while current_vocab_size < vocab_size:
@@ -94,8 +94,8 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    text_data = load_text_data()
-    vocab_size = 257
+    text_data: str = load_text_data()
+    vocab_size: int = 257
     tracemalloc.start()
     t_0 = time.perf_counter()
     train_bpe(text_data, vocab_size)
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    elapsed_seconds = t_1 - t_0
+    elapsed_seconds: float = t_1 - t_0
     logger.info("Training BPE took %.2f seconds", elapsed_seconds)
     logger.info(
         "Current memory usage: %.2f MB, Peak memory usage: %.2f MB",
