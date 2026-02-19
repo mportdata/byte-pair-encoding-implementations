@@ -85,3 +85,28 @@ Current compaction thresholds in `09-lazy-index-compaction/main.py`:
 Observed benchmark note:
 - with `max_mb: 50` and `vocab_size: 500`, these settings showed a runtime
   improvement versus the non-compacting lazy-index variant.
+
+## 10. Heap Pair Selection `TODO`
+
+Use a max-heap with lazy invalidation for selecting the next best merge pair
+instead of repeatedly scanning `pair_counter` with `most_common(1)`.
+
+## 11. Sequence Storage Optimization `TODO`
+
+Evaluate more efficient per-type sequence storage to reduce Python object
+overhead in hot merge/update paths while preserving current behavior.
+
+## 12. Batch Delta Application `TODO`
+
+Batch local/global pair-counter delta updates per affected type to reduce
+Python-loop overhead from many small counter operations.
+
+## 13. Adaptive Compaction Policy `TODO`
+
+Make compaction thresholds dynamic based on runtime metrics (e.g., live/touched
+ratio and observed compaction payoff) instead of fixed constants.
+
+## 14. Structure of Arrays `TODO`
+
+Explore a structure-of-arrays representation for core training state to improve
+cache behavior and reduce object overhead in large runs.
