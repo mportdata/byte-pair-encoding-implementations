@@ -1,10 +1,10 @@
 RUNNER ?= uv run
 
-.PHONY: all incremental text 01 02 03 04 05 06 07 08 09
+.PHONY: all incremental text 01 02 03 04 05 06 07 08 09 10
 
-all: text 01 02 03 04 05 06 07 08 09
+all: text 01 02 03 04 05 06 07 08 09 10
 
-incremental: text 05 06 07 08 09
+incremental: text 05 06 07 08 09 10
 
 text:
 	$(RUNNER) get_text.py
@@ -35,3 +35,6 @@ text:
 
 09:
 	$(RUNNER) 09-lazy-index-compaction/main.py
+
+10:
+	$(RUNNER) 10-heap-pair-selection/main.py
