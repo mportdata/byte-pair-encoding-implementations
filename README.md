@@ -61,3 +61,18 @@ memory-lean equivalents while preserving behavior:
 The list index is append-only and may contain stale or duplicate type IDs, but
 correctness is preserved by checking pair presence in each type before applying
 updates. This reduces memory usage while keeping incremental pair-count updates.
+
+## 8. Windowed Pair Updates (Locality)
+
+In this implementation, we avoid rebuilding full per-type pair counters after a
+merge. Instead, for each affected type we update pair counts using local
+windowed deltas around replacement positions and rebuild the merged sequence in
+one pass.
+
+This keeps correctness while reducing repeated per-type full scans and lowering
+allocation churn during training.
+
+## 9. Lazy Index Compaction
+
+In this step, we add compaction/maintenance for lazy pair-to-type indices to
+control stale or duplicate entries over time while preserving correctness.
