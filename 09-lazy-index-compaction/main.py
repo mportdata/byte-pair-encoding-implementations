@@ -11,9 +11,11 @@ import yaml
 logger = logging.getLogger(__name__)
 TOKEN_RE = re.compile(r"\S+")
 PAIR_MASK = (1 << 32) - 1
-COMPACTION_SIZE_THRESHOLD = 512
-COMPACTION_MIN_TOUCHED_FOR_WASTE = 128
-COMPACTION_LIVE_RATIO_THRESHOLD = 0.40
+# Compaction is intentionally conservative to avoid adding overhead
+# on medium-size runs where stale-index cleanup may not amortize.
+COMPACTION_SIZE_THRESHOLD = 2048
+COMPACTION_MIN_TOUCHED_FOR_WASTE = 512
+COMPACTION_LIVE_RATIO_THRESHOLD = 0.25
 
 
 def pack_pair(a: int, b: int) -> int:

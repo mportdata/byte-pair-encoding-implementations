@@ -76,3 +76,12 @@ allocation churn during training.
 
 In this step, we add compaction/maintenance for lazy pair-to-type indices to
 control stale or duplicate entries over time while preserving correctness.
+
+Current compaction thresholds in `09-lazy-index-compaction/main.py`:
+- `COMPACTION_SIZE_THRESHOLD = 2048`
+- `COMPACTION_MIN_TOUCHED_FOR_WASTE = 512`
+- `COMPACTION_LIVE_RATIO_THRESHOLD = 0.25`
+
+Observed benchmark note:
+- with `max_mb: 50` and `vocab_size: 500`, these settings showed a runtime
+  improvement versus the non-compacting lazy-index variant.
