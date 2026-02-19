@@ -6,15 +6,14 @@ import logging
 import time
 import re
 import tracemalloc
-
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     force=True
-# )
+import yaml
 
 logger = logging.getLogger(__name__)
 TOKEN_RE = re.compile(r"\S+")
 PAIR_MASK = (1 << 32) - 1
+COMPACTION_SIZE_THRESHOLD = 512
+COMPACTION_MIN_TOUCHED_FOR_WASTE = 128
+COMPACTION_LIVE_RATIO_THRESHOLD = 0.40
 
 
 def pack_pair(a: int, b: int) -> int:
@@ -31,6 +30,23 @@ def load_text_data() -> str:
     logger.info("Loaded text data (%d characters)", len(text_data))
     logger.debug("First 100 characters: %s", text_data[:100])
     return text_data
+
+def load_vocab_size() -> int:
+    config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    vocab_size = config_data.get("vocab_size")
+    if not isinstance(vocab_size, int):
+        raise ValueError("config.yaml must define integer vocab_size")
+    return vocab_size
+
+def configure_logging() -> None:
+    config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    debug_logging = config_data.get("debug_logging", False)
+    if not isinstance(debug_logging, bool):
+        raise ValueError("config.yaml debug_logging must be a boolean")
+    level = logging.DEBUG if debug_logging else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s: %(message)s", force=True)
 
 
 def _encode_types_iter(s: str) -> Iterable[bytes]:
@@ -174,6 +190,33 @@ def _build_windowed_delta_for_positions(
 
     return deltas
 
+def compact_pair_index_for_key(
+    pair_to_type_ids: dict[int, list[int]],
+    pairs_by_type_id: list[Counter[int]],
+    pair_key: int,
+) -> tuple[int, int]:
+    index_list = pair_to_type_ids.get(pair_key, [])
+    if not index_list:
+        return 0, 0
+
+    original_size = len(index_list)
+    seen: set[int] = set()
+    compacted: list[int] = []
+
+    for type_id in index_list:
+        if type_id in seen:
+            continue
+        seen.add(type_id)
+        if pairs_by_type_id[type_id].get(pair_key, 0) > 0:
+            compacted.append(type_id)
+
+    if compacted:
+        pair_to_type_ids[pair_key] = compacted
+    else:
+        del pair_to_type_ids[pair_key]
+
+    return original_size, len(compacted)
+
 def apply_pair_merge(
     type_seqs: list[list[int]],
     type_freqs: list[int],
@@ -186,10 +229,13 @@ def apply_pair_merge(
     affected_type_ids = pair_to_type_ids.get(pair_key, [])
     if not affected_type_ids:
         return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter
+    touched = len(affected_type_ids)
+    live = 0
 
     for type_id in affected_type_ids:
         if pairs_by_type_id[type_id].get(pair_key, 0) == 0:
             continue
+        live += 1
 
         positions = _find_pair_positions_in_type(type_seqs[type_id], pair_key)
         if not positions:
@@ -219,6 +265,24 @@ def apply_pair_merge(
             prev = index + 2
         new_type_seq.extend(type_seq[prev:])
         type_seqs[type_id] = new_type_seq
+
+    should_compact = (
+        touched >= COMPACTION_SIZE_THRESHOLD
+        or (
+            touched >= COMPACTION_MIN_TOUCHED_FOR_WASTE
+            and (live / touched) <= COMPACTION_LIVE_RATIO_THRESHOLD
+        )
+    )
+    if should_compact:
+        before, after = compact_pair_index_for_key(pair_to_type_ids, pairs_by_type_id, pair_key)
+        logger.debug(
+            "Compacted pair index for key %s: %d -> %d entries (live/touched=%d/%d)",
+            pair_key,
+            before,
+            after,
+            live,
+            touched,
+        )
 
     return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter
 
@@ -262,9 +326,9 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    configure_logging()
     text_data: str = load_text_data()
-    vocab_size: int = 270
+    vocab_size: int = load_vocab_size()
     tracemalloc.start()
     t_0 = time.perf_counter()
     train_bpe(text_data, vocab_size)

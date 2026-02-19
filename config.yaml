@@ -2,5 +2,7 @@ dataset_name: wikimedia/wikipedia
 dataset_config: "20231101.en"
 split: train
 text_field: text
-max_mb: 100
+max_mb: 10
 output_path: text.txt
+vocab_size: 260
+debug_logging: true
