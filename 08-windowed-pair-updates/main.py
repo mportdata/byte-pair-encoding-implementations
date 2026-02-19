@@ -140,9 +140,6 @@ def _alter_specific_pair_counters(
     else:
         global_counter.pop(pair_key, None)
 
-def _index_add(pair_to_type_ids: dict[int, list[int]], pair_key: int, type_id: int) -> None:
-    pair_to_type_ids.setdefault(pair_key, []).append(type_id)
-
 def _build_windowed_delta_for_positions(
     type_seq: list[int],
     positions: list[int],
@@ -212,7 +209,7 @@ def apply_pair_merge(
                 delta=delta,
             )
             if delta > 0:
-                _index_add(pair_to_type_ids, changed_pair_key, type_id)
+                pair_to_type_ids.setdefault(changed_pair_key, []).append(type_id)
 
         new_type_seq: list[int] = []
         prev = 0
