@@ -100,10 +100,19 @@ Observed benchmark note:
   - Step 09: `123.14s` (peak memory `543.58 MB`)
   - Step 10: `117.88s` (peak memory `544.49 MB`)
 
-## 11. Sequence Storage Optimization `TODO`
+## 11. Sequence Storage Optimization
 
-Evaluate more efficient per-type sequence storage to reduce Python object
-overhead in hot merge/update paths while preserving current behavior.
+In this implementation, we replace per-type Python `list[int]` token
+sequences with `array('I')` (unsigned int arrays) to reduce object overhead
+while preserving the same merge and counter-update behavior.
+
+This keeps algorithmic behavior unchanged while making sequence storage more
+compact in hot update paths.
+
+Observed benchmark note:
+- with `max_mb: 100` and `vocab_size: 2000`:
+  - Step 10: `117.88s` (peak memory `544.49 MB`)
+  - Step 11: `124.84s` (peak memory `535.95 MB`)
 
 ## 12. Batch Delta Application `TODO`
 
