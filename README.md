@@ -86,10 +86,19 @@ Observed benchmark note:
 - with `max_mb: 50` and `vocab_size: 500`, these settings showed a runtime
   improvement versus the non-compacting lazy-index variant.
 
-## 10. Heap Pair Selection `TODO`
+## 10. Heap Pair Selection
 
-Use a max-heap with lazy invalidation for selecting the next best merge pair
-instead of repeatedly scanning `pair_counter` with `most_common(1)`.
+In this implementation, we replace repeated full-map max selection with a
+max-heap (implemented via Python's min-heap + negative counts) and lazy
+invalidation of stale entries.
+
+Changed pair keys are pushed back to the heap after each merge, and a stale-heap
+rebuild guard keeps heap growth under control during long runs.
+
+Observed benchmark note:
+- with `max_mb: 100` and `vocab_size: 2000`:
+  - Step 09: `123.14s` (peak memory `543.58 MB`)
+  - Step 10: `117.88s` (peak memory `544.49 MB`)
 
 ## 11. Sequence Storage Optimization `TODO`
 

@@ -309,6 +309,9 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
         token = base_vocab_size + len(merge_dict)
         pair = unpack_pair(most_common_pair_key)
+        if pair in merge_dict:
+            pair_counter.pop(most_common_pair_key, None)
+            continue
         merge_dict[pair] = token
 
         type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter = apply_pair_merge(
