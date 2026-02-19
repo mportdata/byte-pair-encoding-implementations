@@ -70,11 +70,11 @@ def build_type_state(s: str) -> tuple[list[list[int]], list[int], list[Counter[i
     pairs_by_type_id: list[Counter[int]] = _build_pairs_by_type_id(type_seqs)
     return type_seqs, type_freqs, pairs_by_type_id
 
-def build_pair_to_type_ids(pairs_by_type_id: list[Counter[int]]) -> dict[int, list[int]]:
-    pair_to_type_ids: dict[int, list[int]] = {}
+def build_pair_to_type_ids(pairs_by_type_id: list[Counter[int]]) -> dict[int, set[int]]:
+    pair_to_type_ids: dict[int, set[int]] = {}
     for type_id, counter in enumerate(pairs_by_type_id):
         for pair_key in counter:
-            pair_to_type_ids.setdefault(pair_key, []).append(type_id)
+            pair_to_type_ids.setdefault(pair_key, set()).add(type_id)
     return pair_to_type_ids
 
 def _count_pairs_in_type(seq: list[int]) -> Counter[int]:
@@ -140,8 +140,16 @@ def _alter_specific_pair_counters(
     else:
         global_counter.pop(pair_key, None)
 
-def _index_add(pair_to_type_ids: dict[int, list[int]], pair_key: int, type_id: int) -> None:
-    pair_to_type_ids.setdefault(pair_key, []).append(type_id)
+def _index_add(pair_to_type_ids: dict[int, set[int]], pair_key: int, type_id: int) -> None:
+    pair_to_type_ids.setdefault(pair_key, set()).add(type_id)
+
+def _index_remove(pair_to_type_ids: dict[int, set[int]], pair_key: int, type_id: int) -> None:
+    s = pair_to_type_ids.get(pair_key)
+    if s is None:
+        return
+    s.discard(type_id)
+    if not s:
+        del pair_to_type_ids[pair_key]
 
 def _build_windowed_delta_for_positions(
     type_seq: list[int],
@@ -181,16 +189,16 @@ def apply_pair_merge(
     type_seqs: list[list[int]],
     type_freqs: list[int],
     pairs_by_type_id: list[Counter[int]],
-    pair_to_type_ids: dict[int, list[int]],
+    pair_to_type_ids: dict[int, set[int]],
     pair_counter: Counter[int],
     pair_key: int,
     token: int,
-) -> tuple[list[list[int]], list[Counter[int]], dict[int, list[int]], Counter[int]]:
-    affected_type_ids = pair_to_type_ids.get(pair_key, [])
+) -> tuple[list[list[int]], list[Counter[int]], dict[int, set[int]], Counter[int]]:
+    affected_type_ids = pair_to_type_ids.get(pair_key)
     if not affected_type_ids:
         return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter
 
-    for type_id in affected_type_ids:
+    for type_id in tuple(affected_type_ids):
         if pairs_by_type_id[type_id].get(pair_key, 0) == 0:
             continue
 
@@ -211,7 +219,9 @@ def apply_pair_merge(
                 type_frequency=type_freqs[type_id],
                 delta=delta,
             )
-            if delta > 0:
+            if local_counter.get(changed_pair_key, 0) == 0:
+                _index_remove(pair_to_type_ids, changed_pair_key, type_id)
+            elif delta > 0:
                 _index_add(pair_to_type_ids, changed_pair_key, type_id)
 
         new_type_seq: list[int] = []
