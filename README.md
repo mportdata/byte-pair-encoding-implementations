@@ -114,10 +114,15 @@ Observed benchmark note:
   - Step 10: `117.88s` (peak memory `544.49 MB`)
   - Step 11: `124.84s` (peak memory `535.95 MB`)
 
-## 12. Batch Delta Application `TODO`
+## 12. Batch Delta Application
 
-Batch local/global pair-counter delta updates per affected type to reduce
-Python-loop overhead from many small counter operations.
+In this implementation, we keep windowed merge locality from step 8 but apply
+local and global counter changes in a single batched pass per affected type.
+Instead of repeatedly mutating counters for each individual pair-touch, we
+first aggregate net deltas and then apply them once.
+
+This reduces Python-loop and dictionary-mutation overhead in the hot merge path
+while preserving correctness.
 
 ## 13. Adaptive Compaction Policy `TODO`
 
