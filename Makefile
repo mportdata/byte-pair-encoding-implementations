@@ -1,10 +1,10 @@
 RUNNER ?= uv run
 
-.PHONY: all incremental text 01 02 03 04 05 06 07 08 09 10 11 12 13
+.PHONY: all incremental text 01 02 03 04 05 06 07 08 09 10 11 12 13 14
 
-all: text 01 02 03 04 05 06 07 08 09 10 11 12 13
+all: text 01 02 03 04 05 06 07 08 09 10 11 12 13 14
 
-incremental: text 05 06 07 08 09 10 11 12 13
+incremental: text 05 06 07 08 09 10 11 12 13 14
 
 text:
 	$(RUNNER) get_text.py
@@ -47,3 +47,6 @@ text:
 
 13:
 	$(RUNNER) 13-adaptive-compaction-policy/main.py
+
+14:
+	$(RUNNER) 14-structure-of-arrays/main.py

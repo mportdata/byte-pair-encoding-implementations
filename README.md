@@ -156,7 +156,13 @@ Interpretation:
 - in this high-vocab setting, adaptive compaction improved runtime by ~14.3%
   while keeping peak memory effectively flat.
 
-## 14. Structure of Arrays `TODO`
+## 14. Structure of Arrays
 
-Explore a structure-of-arrays representation for core training state to improve
-cache behavior and reduce object overhead in large runs.
+In this implementation, per-type sequences are stored in a structure-of-arrays
+layout using:
+- `seq_data: array('I')` (one flat token buffer for all types)
+- `seq_offsets: array('I')` (start/end offsets per type)
+
+This replaces the previous list-of-arrays storage for type sequences while
+keeping the step 13 merge/update logic intact (heap selection, lazy index, and
+adaptive compaction). The goal is lower object overhead and improved locality.
