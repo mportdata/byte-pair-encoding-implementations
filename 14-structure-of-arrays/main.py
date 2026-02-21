@@ -108,31 +108,27 @@ def replace_type_seq(
     new_len = len(new_type_seq)
     delta = new_len - old_len
 
-    if delta == 0:
-        seq_data[start:end] = new_type_seq
-        return seq_data, seq_offsets
+    seq_data[start:end] = new_type_seq
+    if delta != 0:
+        for offset_idx in range(type_id + 1, len(seq_offsets)):
+            seq_offsets[offset_idx] += delta
 
-    new_seq_data = array("I")
-    new_seq_data.extend(seq_data[:start])
-    new_seq_data.extend(new_type_seq)
-    new_seq_data.extend(seq_data[end:])
+    return seq_data, seq_offsets
 
-    new_seq_offsets = array("I", seq_offsets)
-    for offset_idx in range(type_id + 1, len(new_seq_offsets)):
-        new_seq_offsets[offset_idx] += delta
 
-    return new_seq_data, new_seq_offsets
+def _count_pairs_in_bounds(seq_data: array, start: int, end: int) -> Counter[int]:
+    if end - start < 2:
+        return Counter()
+    return Counter(pack_pair(seq_data[i], seq_data[i + 1]) for i in range(start, end - 1))
 
 
 def _build_pairs_by_type_id(seq_data: array, seq_offsets: array) -> list[Counter[int]]:
     pairs_by_type_id: list[Counter[int]] = []
     num_types = len(seq_offsets) - 1
     for type_id in range(num_types):
-        seq = get_type_seq(seq_data, seq_offsets, type_id)
-        if len(seq) < 2:
-            pairs_by_type_id.append(Counter())
-        else:
-            pairs_by_type_id.append(Counter(pack_pair(a, b) for a, b in zip(seq, seq[1:])))
+        start = seq_offsets[type_id]
+        end = seq_offsets[type_id + 1]
+        pairs_by_type_id.append(_count_pairs_in_bounds(seq_data, start, end))
 
     return pairs_by_type_id
 
@@ -157,16 +153,13 @@ def build_pair_to_type_ids(pairs_by_type_id: list[Counter[int]]) -> dict[int, li
             pair_to_type_ids.setdefault(pair_key, []).append(type_id)
     return pair_to_type_ids
 
-def _count_pairs_in_type(seq: array) -> Counter[int]:
-    return Counter(pack_pair(a, b) for a, b in zip(seq, seq[1:])) if len(seq) >= 2 else Counter()
-
-
 def build_pair_counter(seq_data: array, seq_offsets: array, type_freqs: list[int]) -> Counter[int]:
     pair_counter: Counter[int] = Counter()
 
     for type_id, freq in enumerate(type_freqs):
-        seq = get_type_seq(seq_data, seq_offsets, type_id)
-        local = _count_pairs_in_type(seq)
+        start = seq_offsets[type_id]
+        end = seq_offsets[type_id + 1]
+        local = _count_pairs_in_bounds(seq_data, start, end)
         if not local:
             continue
 
