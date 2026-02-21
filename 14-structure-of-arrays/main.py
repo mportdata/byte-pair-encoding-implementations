@@ -81,38 +81,12 @@ def _encode_types_iter(s: str) -> Iterable[bytes]:
             yield ("Ġ" + w).encode("utf-8")  # subsequent words: add leading space
 
 
-def build_sequence_soa(type_bytes: Iterable[bytes]) -> tuple[array, array]:
+def build_sequence_soa(type_seqs: list[array]) -> tuple[array, array]:
     seq_data = array("I")
     seq_offsets = array("I", [0])
-    for b in type_bytes:
-        seq_data.extend(byte for byte in b)
+    for seq in type_seqs:
+        seq_data.extend(seq)
         seq_offsets.append(len(seq_data))
-    return seq_data, seq_offsets
-
-
-def get_type_seq(seq_data: array, seq_offsets: array, type_id: int) -> array:
-    start = seq_offsets[type_id]
-    end = seq_offsets[type_id + 1]
-    return seq_data[start:end]
-
-
-def replace_type_seq(
-    seq_data: array,
-    seq_offsets: array,
-    type_id: int,
-    new_type_seq: array,
-) -> tuple[array, array]:
-    start = seq_offsets[type_id]
-    end = seq_offsets[type_id + 1]
-    old_len = end - start
-    new_len = len(new_type_seq)
-    delta = new_len - old_len
-
-    seq_data[start:end] = new_type_seq
-    if delta != 0:
-        for offset_idx in range(type_id + 1, len(seq_offsets)):
-            seq_offsets[offset_idx] += delta
-
     return seq_data, seq_offsets
 
 
@@ -122,29 +96,29 @@ def _count_pairs_in_bounds(seq_data: array, start: int, end: int) -> Counter[int
     return Counter(pack_pair(seq_data[i], seq_data[i + 1]) for i in range(start, end - 1))
 
 
-def _build_pairs_by_type_id(seq_data: array, seq_offsets: array) -> list[Counter[int]]:
+def _build_pairs_by_type_id(type_seqs: list[array]) -> list[Counter[int]]:
     pairs_by_type_id: list[Counter[int]] = []
-    num_types = len(seq_offsets) - 1
-    for type_id in range(num_types):
-        start = seq_offsets[type_id]
-        end = seq_offsets[type_id + 1]
-        pairs_by_type_id.append(_count_pairs_in_bounds(seq_data, start, end))
+    for seq in type_seqs:
+        if len(seq) < 2:
+            pairs_by_type_id.append(Counter())
+        else:
+            pairs_by_type_id.append(Counter(pack_pair(a, b) for a, b in zip(seq, seq[1:])))
 
     return pairs_by_type_id
 
 
-def build_type_state(s: str) -> tuple[array, array, list[int], list[Counter[int]]]:
+def build_type_state(s: str) -> tuple[list[array], list[int], list[Counter[int]]]:
     counter: Counter[bytes] = Counter(_encode_types_iter(s))
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types as byte sequences: %s", counter.most_common(10))
 
-    seq_data, seq_offsets = build_sequence_soa(counter.keys())
+    type_seqs: list[array] = [array("I", (byte for byte in b)) for b in counter.keys()]
 
-    # Keep frequencies aligned with seq_offsets by iterating values in key order
+    # Keep frequencies aligned with type_seqs by iterating values in key order
     type_freqs: list[int] = list(counter.values())
 
-    pairs_by_type_id: list[Counter[int]] = _build_pairs_by_type_id(seq_data, seq_offsets)
-    return seq_data, seq_offsets, type_freqs, pairs_by_type_id
+    pairs_by_type_id: list[Counter[int]] = _build_pairs_by_type_id(type_seqs)
+    return type_seqs, type_freqs, pairs_by_type_id
 
 def build_pair_to_type_ids(pairs_by_type_id: list[Counter[int]]) -> dict[int, list[int]]:
     pair_to_type_ids: dict[int, list[int]] = {}
@@ -340,8 +314,7 @@ def update_compaction_policy(
         )
 
 def apply_pair_merge(
-    seq_data: array,
-    seq_offsets: array,
+    type_seqs: list[array],
     type_freqs: list[int],
     pairs_by_type_id: list[Counter[int]],
     pair_to_type_ids: dict[int, list[int]],
@@ -350,10 +323,10 @@ def apply_pair_merge(
     token: int,
     merge_step: int,
     compaction_policy: CompactionPolicy,
-) -> tuple[array, array, list[Counter[int]], dict[int, list[int]], Counter[int], set[int]]:
+) -> tuple[list[array], list[Counter[int]], dict[int, list[int]], Counter[int], set[int]]:
     affected_type_ids = pair_to_type_ids.get(pair_key, [])
     if not affected_type_ids:
-        return seq_data, seq_offsets, pairs_by_type_id, pair_to_type_ids, pair_counter, set()
+        return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter, set()
     touched = len(affected_type_ids)
     live = 0
     changed_pair_keys: set[int] = set()
@@ -363,7 +336,7 @@ def apply_pair_merge(
             continue
         live += 1
 
-        type_seq = get_type_seq(seq_data, seq_offsets, type_id)
+        type_seq = type_seqs[type_id]
         positions = _find_pair_positions_in_type(type_seq, pair_key)
         if not positions:
             continue
@@ -391,7 +364,7 @@ def apply_pair_merge(
             new_type_seq.append(token)
             prev = index + 2
         new_type_seq.extend(type_seq[prev:])
-        seq_data, seq_offsets = replace_type_seq(seq_data, seq_offsets, type_id, new_type_seq)
+        type_seqs[type_id] = new_type_seq
 
     should_compact = should_compact_key(
       policy=compaction_policy,
@@ -419,7 +392,7 @@ def apply_pair_merge(
             after=after,
         )
 
-    return seq_data, seq_offsets, pairs_by_type_id, pair_to_type_ids, pair_counter, changed_pair_keys
+    return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter, changed_pair_keys
 
 
 def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
@@ -429,9 +402,11 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
 
     merge_dict: dict[tuple[int, int], int] = {}
 
-    seq_data, seq_offsets, type_freqs, pairs_by_type_id = build_type_state(text)
+    type_seqs, type_freqs, pairs_by_type_id = build_type_state(text)
     pair_to_type_ids = build_pair_to_type_ids(pairs_by_type_id)
 
+    # Build SoA snapshot for read-heavy global pair counting.
+    seq_data, seq_offsets = build_sequence_soa(type_seqs)
     pair_counter: Counter[int] = build_pair_counter(seq_data, seq_offsets, type_freqs)
     pair_heap = build_pair_heap(pair_counter)
 
@@ -451,9 +426,8 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
             continue
         merge_dict[pair] = token
 
-        seq_data, seq_offsets, pairs_by_type_id, pair_to_type_ids, pair_counter, changed_pair_keys = apply_pair_merge(
-            seq_data=seq_data,
-            seq_offsets=seq_offsets,
+        type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter, changed_pair_keys = apply_pair_merge(
+            type_seqs=type_seqs,
             type_freqs=type_freqs,
             pairs_by_type_id=pairs_by_type_id,
             pair_to_type_ids=pair_to_type_ids,
