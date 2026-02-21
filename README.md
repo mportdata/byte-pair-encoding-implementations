@@ -156,7 +156,22 @@ Interpretation:
 - in this high-vocab setting, adaptive compaction improved runtime by ~14.3%
   while keeping peak memory effectively flat.
 
-## 14. Structure of Arrays `TODO`
+## 14. Structure of Arrays
 
-Explore a structure-of-arrays representation for core training state to improve
-cache behavior and reduce object overhead in large runs.
+In this implementation, per-type pair counters are stored in a structure-of-
+arrays style local store:
+- `pair_keys: array('Q')` (sorted packed pair keys per type)
+- `pair_counts: array('I')` (aligned counts per key)
+
+This replaces `Counter[int]` objects in `pairs_by_type_id` with parallel arrays
+while keeping step 13 merge/update logic (heap selection, lazy index, adaptive
+compaction). The goal is to reduce object overhead in local pair storage.
+
+Observed benchmark note:
+- with `max_mb: 100`, `vocab_size: 10000`, `debug_logging: true`:
+  - Step 13: `279.17s` (peak memory `938.19 MB`)
+  - Step 14: `247.25s` (peak memory `646.95 MB`)
+
+Interpretation:
+- in this config, SoA local pair storage improved runtime by ~11.4% and
+  reduced peak memory by ~31.0% versus step 13.
