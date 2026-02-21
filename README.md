@@ -166,3 +166,12 @@ arrays style local store:
 This replaces `Counter[int]` objects in `pairs_by_type_id` with parallel arrays
 while keeping step 13 merge/update logic (heap selection, lazy index, adaptive
 compaction). The goal is to reduce object overhead in local pair storage.
+
+Observed benchmark note:
+- with `max_mb: 100`, `vocab_size: 10000`, `debug_logging: true`:
+  - Step 13: `279.17s` (peak memory `938.19 MB`)
+  - Step 14: `247.25s` (peak memory `646.95 MB`)
+
+Interpretation:
+- in this config, SoA local pair storage improved runtime by ~11.4% and
+  reduced peak memory by ~31.0% versus step 13.
