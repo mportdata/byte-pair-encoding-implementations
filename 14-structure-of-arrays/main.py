@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from array import array
+from bisect import bisect_left
 
 import logging
 import time
@@ -26,6 +27,10 @@ COMPACTION_HISTORY_WINDOW = 64
 COMPACTION_MIN_HISTORY_FOR_ADAPT = 8
 COMPACTION_STRONG_SHRINK = 0.45
 COMPACTION_WEAK_SHRINK = 0.15
+PAIR_KEY_ARRAY_TYPE = "Q"
+PAIR_COUNT_ARRAY_TYPE = "I"
+
+LocalPairStore = tuple[array, array]
 
 
 def pack_pair(a: int, b: int) -> int:
@@ -81,63 +86,86 @@ def _encode_types_iter(s: str) -> Iterable[bytes]:
             yield ("Ġ" + w).encode("utf-8")  # subsequent words: add leading space
 
 
-def build_sequence_soa(type_seqs: list[array]) -> tuple[array, array]:
-    seq_data = array("I")
-    seq_offsets = array("I", [0])
-    for seq in type_seqs:
-        seq_data.extend(seq)
-        seq_offsets.append(len(seq_data))
-    return seq_data, seq_offsets
+def _make_local_pair_store(seq: array) -> LocalPairStore:
+    if len(seq) < 2:
+        return array(PAIR_KEY_ARRAY_TYPE), array(PAIR_COUNT_ARRAY_TYPE)
+
+    counts = Counter(pack_pair(a, b) for a, b in zip(seq, seq[1:]))
+    sorted_items = sorted(counts.items())
+    pair_keys = array(PAIR_KEY_ARRAY_TYPE, (pair_key for pair_key, _ in sorted_items))
+    pair_counts = array(PAIR_COUNT_ARRAY_TYPE, (count for _, count in sorted_items))
+    return pair_keys, pair_counts
 
 
-def _count_pairs_in_bounds(seq_data: array, start: int, end: int) -> Counter[int]:
-    if end - start < 2:
-        return Counter()
-    return Counter(pack_pair(seq_data[i], seq_data[i + 1]) for i in range(start, end - 1))
+def _local_pair_get(local_store: LocalPairStore, pair_key: int) -> int:
+    pair_keys, pair_counts = local_store
+    idx = bisect_left(pair_keys, pair_key)
+    if idx < len(pair_keys) and pair_keys[idx] == pair_key:
+        return pair_counts[idx]
+    return 0
 
 
-def _build_pairs_by_type_id(type_seqs: list[array]) -> list[Counter[int]]:
-    pairs_by_type_id: list[Counter[int]] = []
-    for seq in type_seqs:
-        if len(seq) < 2:
-            pairs_by_type_id.append(Counter())
+def _local_pair_iter_items(local_store: LocalPairStore) -> Iterable[tuple[int, int]]:
+    pair_keys, pair_counts = local_store
+    return zip(pair_keys, pair_counts)
+
+
+def _local_pair_apply_delta(local_store: LocalPairStore, pair_key: int, delta: int) -> None:
+    if delta == 0:
+        return
+    pair_keys, pair_counts = local_store
+    idx = bisect_left(pair_keys, pair_key)
+
+    if idx < len(pair_keys) and pair_keys[idx] == pair_key:
+        new_count = pair_counts[idx] + delta
+        if new_count > 0:
+            pair_counts[idx] = new_count
         else:
-            pairs_by_type_id.append(Counter(pack_pair(a, b) for a, b in zip(seq, seq[1:])))
+            del pair_keys[idx]
+            del pair_counts[idx]
+        return
+
+    if delta > 0:
+        pair_keys.insert(idx, pair_key)
+        pair_counts.insert(idx, delta)
+
+
+def _build_pairs_by_type_id(type_seqs: list[array]) -> list[LocalPairStore]:
+    pairs_by_type_id: list[LocalPairStore] = []
+
+    for seq in type_seqs:
+        pairs_by_type_id.append(_make_local_pair_store(seq))
 
     return pairs_by_type_id
 
 
-def build_type_state(s: str) -> tuple[list[array], list[int], list[Counter[int]]]:
+def build_type_state(s: str) -> tuple[list[array], list[int], list[LocalPairStore]]:
     counter: Counter[bytes] = Counter(_encode_types_iter(s))
     logger.debug("Counted types, total unique types: %d", len(counter))
     logger.debug("Most common 10 types as byte sequences: %s", counter.most_common(10))
 
+    # Convert to mutable unsigned-int arrays for compact storage
     type_seqs: list[array] = [array("I", (byte for byte in b)) for b in counter.keys()]
 
-    # Keep frequencies aligned with type_seqs by iterating values in key order
+    # Keep frequencies aligned with type_seqs by iterating values in the same order as keys()
     type_freqs: list[int] = list(counter.values())
 
-    pairs_by_type_id: list[Counter[int]] = _build_pairs_by_type_id(type_seqs)
+    pairs_by_type_id: list[LocalPairStore] = _build_pairs_by_type_id(type_seqs)
     return type_seqs, type_freqs, pairs_by_type_id
 
-def build_pair_to_type_ids(pairs_by_type_id: list[Counter[int]]) -> dict[int, list[int]]:
+def build_pair_to_type_ids(pairs_by_type_id: list[LocalPairStore]) -> dict[int, list[int]]:
     pair_to_type_ids: dict[int, list[int]] = {}
-    for type_id, counter in enumerate(pairs_by_type_id):
-        for pair_key in counter:
+    for type_id, local_store in enumerate(pairs_by_type_id):
+        pair_keys, _ = local_store
+        for pair_key in pair_keys:
             pair_to_type_ids.setdefault(pair_key, []).append(type_id)
     return pair_to_type_ids
 
-def build_pair_counter(seq_data: array, seq_offsets: array, type_freqs: list[int]) -> Counter[int]:
+def build_pair_counter(pairs_by_type_id: list[LocalPairStore], type_freqs: list[int]) -> Counter[int]:
     pair_counter: Counter[int] = Counter()
 
-    for type_id, freq in enumerate(type_freqs):
-        start = seq_offsets[type_id]
-        end = seq_offsets[type_id + 1]
-        local = _count_pairs_in_bounds(seq_data, start, end)
-        if not local:
-            continue
-
-        for pair_key, count in local.items():
+    for local_store, freq in zip(pairs_by_type_id, type_freqs):
+        for pair_key, count in _local_pair_iter_items(local_store):
             pair_counter[pair_key] += count * freq
 
     logger.debug("Counted pairs, total unique pairs: %d", len(pair_counter))
@@ -177,18 +205,13 @@ def _find_pair_positions_in_type(type_seq: array, pair_key: int) -> list[int]:
     return positions
 
 def _alter_specific_pair_counters(
-    local_counter: Counter[int],
+    local_store: LocalPairStore,
     global_counter: Counter[int],
     pair_key: int,
     type_frequency: int,
     delta: int,
 ) -> None:
-    # local
-    new_local = local_counter.get(pair_key, 0) + delta
-    if new_local:
-        local_counter[pair_key] = new_local
-    else:
-        local_counter.pop(pair_key, None)
+    _local_pair_apply_delta(local_store, pair_key, delta)
 
     # global (weighted)
     new_global = global_counter.get(pair_key, 0) + delta * type_frequency
@@ -250,7 +273,7 @@ def should_compact_key(
 
 def compact_pair_index_for_key(
     pair_to_type_ids: dict[int, list[int]],
-    pairs_by_type_id: list[Counter[int]],
+    pairs_by_type_id: list[LocalPairStore],
     pair_key: int,
 ) -> tuple[int, int]:
     index_list = pair_to_type_ids.get(pair_key, [])
@@ -265,7 +288,7 @@ def compact_pair_index_for_key(
         if type_id in seen:
             continue
         seen.add(type_id)
-        if pairs_by_type_id[type_id].get(pair_key, 0) > 0:
+        if _local_pair_get(pairs_by_type_id[type_id], pair_key) > 0:
             compacted.append(type_id)
 
     if compacted:
@@ -316,14 +339,14 @@ def update_compaction_policy(
 def apply_pair_merge(
     type_seqs: list[array],
     type_freqs: list[int],
-    pairs_by_type_id: list[Counter[int]],
+    pairs_by_type_id: list[LocalPairStore],
     pair_to_type_ids: dict[int, list[int]],
     pair_counter: Counter[int],
     pair_key: int,
     token: int,
     merge_step: int,
     compaction_policy: CompactionPolicy,
-) -> tuple[list[array], list[Counter[int]], dict[int, list[int]], Counter[int], set[int]]:
+) -> tuple[list[array], list[LocalPairStore], dict[int, list[int]], Counter[int], set[int]]:
     affected_type_ids = pair_to_type_ids.get(pair_key, [])
     if not affected_type_ids:
         return type_seqs, pairs_by_type_id, pair_to_type_ids, pair_counter, set()
@@ -332,15 +355,15 @@ def apply_pair_merge(
     changed_pair_keys: set[int] = set()
 
     for type_id in affected_type_ids:
-        if pairs_by_type_id[type_id].get(pair_key, 0) == 0:
+        if _local_pair_get(pairs_by_type_id[type_id], pair_key) == 0:
             continue
         live += 1
 
-        type_seq = type_seqs[type_id]
-        positions = _find_pair_positions_in_type(type_seq, pair_key)
+        positions = _find_pair_positions_in_type(type_seqs[type_id], pair_key)
         if not positions:
             continue
-        local_counter = pairs_by_type_id[type_id]
+        type_seq = type_seqs[type_id]
+        local_store = pairs_by_type_id[type_id]
         deltas = _build_windowed_delta_for_positions(type_seq, positions, pair_key, token)
 
         for changed_pair_key, delta in deltas.items():
@@ -348,7 +371,7 @@ def apply_pair_merge(
                 continue
             changed_pair_keys.add(changed_pair_key)
             _alter_specific_pair_counters(
-                local_counter=local_counter,
+                local_store=local_store,
                 global_counter=pair_counter,
                 pair_key=changed_pair_key,
                 type_frequency=type_freqs[type_id],
@@ -405,9 +428,7 @@ def train_bpe(text: str, vocab_size: int) -> dict[tuple[int, int], int]:
     type_seqs, type_freqs, pairs_by_type_id = build_type_state(text)
     pair_to_type_ids = build_pair_to_type_ids(pairs_by_type_id)
 
-    # Build SoA snapshot for read-heavy global pair counting.
-    seq_data, seq_offsets = build_sequence_soa(type_seqs)
-    pair_counter: Counter[int] = build_pair_counter(seq_data, seq_offsets, type_freqs)
+    pair_counter: Counter[int] = build_pair_counter(pairs_by_type_id, type_freqs)
     pair_heap = build_pair_heap(pair_counter)
 
     compaction_policy = CompactionPolicy()

@@ -158,11 +158,11 @@ Interpretation:
 
 ## 14. Structure of Arrays
 
-In this implementation, per-type sequences are stored in a structure-of-arrays
-layout using:
-- `seq_data: array('I')` (one flat token buffer for all types)
-- `seq_offsets: array('I')` (start/end offsets per type)
+In this implementation, per-type pair counters are stored in a structure-of-
+arrays style local store:
+- `pair_keys: array('Q')` (sorted packed pair keys per type)
+- `pair_counts: array('I')` (aligned counts per key)
 
-This replaces the previous list-of-arrays storage for type sequences while
-keeping the step 13 merge/update logic intact (heap selection, lazy index, and
-adaptive compaction). The goal is lower object overhead and improved locality.
+This replaces `Counter[int]` objects in `pairs_by_type_id` with parallel arrays
+while keeping step 13 merge/update logic (heap selection, lazy index, adaptive
+compaction). The goal is to reduce object overhead in local pair storage.
