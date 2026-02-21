@@ -124,10 +124,37 @@ first aggregate net deltas and then apply them once.
 This reduces Python-loop and dictionary-mutation overhead in the hot merge path
 while preserving correctness.
 
-## 13. Adaptive Compaction Policy `TODO`
+Observed benchmark notes:
+- with `max_mb: 100`, `vocab_size: 2000`, `debug_logging: true`:
+  - Step 11: `124.84s` (peak memory `535.95 MB`)
+  - Step 12: `135.02s` (peak memory `535.95 MB`)
+- with `max_mb: 500`, `vocab_size: 10000`, `debug_logging: true`:
+  - Step 11: `2915.65s` (peak memory `3176.38 MB`)
+  - Step 12: `3105.91s` (peak memory `3176.38 MB`)
 
-Make compaction thresholds dynamic based on runtime metrics (e.g., live/touched
-ratio and observed compaction payoff) instead of fixed constants.
+Conclusion:
+- this batching tradeoff did not improve performance in tested configs and is
+  kept as a documented experiment, but not used as the baseline for later steps.
+
+## 13. Adaptive Compaction Policy
+
+In this implementation, compaction decisions are made by an adaptive policy
+instead of fixed thresholds. The policy uses:
+- `touched` vs `live` ratio for staleness/waste
+- per-key cooldown to avoid over-compacting hot keys
+- rolling compaction payoff (`shrink_history`) to tune aggressiveness over time
+
+This aims to reduce unnecessary compaction work while still cleaning stale
+index entries when it is likely to pay off.
+
+Observed benchmark note:
+- with `max_mb: 100`, `vocab_size: 10000`, `debug_logging: true`:
+  - Step 11: `325.76s` (peak memory `940.05 MB`)
+  - Step 13: `279.17s` (peak memory `938.19 MB`)
+
+Interpretation:
+- in this high-vocab setting, adaptive compaction improved runtime by ~14.3%
+  while keeping peak memory effectively flat.
 
 ## 14. Structure of Arrays `TODO`
 
