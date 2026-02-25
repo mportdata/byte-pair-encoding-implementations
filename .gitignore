@@ -11,3 +11,7 @@ wheels/
 
 # Generated training text
 text.txt
+
+# Notebook/data artifacts
+src/byte_pair_encoding/data/
+.ipynb_checkpoints/
