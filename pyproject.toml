@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "huggingface-hub>=0.28.0",
+    "notebook>=7.5.4",
     "pyarrow>=18.0.0",
     "pyyaml>=6.0",
 ]
